@@ -18,7 +18,12 @@ from app.database import SessionLocal
 from app.models import Order
 from fastapi import WebSocket, WebSocketDisconnect
 
-from app.schemas import OrderCreate, OrderUpdate, OrderResponse
+from app.schemas import (
+    OrderCreate,
+    OrderUpdate,
+    OrderResponse,
+    PaymentWebhook
+)
 from app.rate_limiter import check_rate_limit
 router = APIRouter()
 
@@ -147,4 +152,42 @@ async def test_broadcast(order_id: int):
     return {
         "message": "Broadcast sent",
         "order_id": order_id
+    }
+@router.post("/webhooks/payment")
+async def payment_webhook(
+    webhook: PaymentWebhook,
+    db: Session = Depends(get_db)
+):
+    order = db.query(Order).filter(
+        Order.id == webhook.order_id
+    ).first()
+
+    if not order:
+        raise HTTPException(
+            status_code=404,
+            detail="Order not found"
+        )
+
+    if webhook.status == "SUCCESS":
+        order.status = "PAID"
+
+    elif webhook.status == "FAILED":
+        order.status = "PAYMENT_FAILED"
+
+    db.commit()
+    db.refresh(order)
+
+    redis_client.delete(
+        f"order:{order.id}"
+    )
+
+    publish_order_update(
+        order.id,
+        order.status
+    )
+
+    return {
+        "message": "Webhook processed",
+        "order_id": order.id,
+        "status": order.status
     }

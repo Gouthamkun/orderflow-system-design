@@ -20,3 +20,8 @@ class OrderResponse(BaseModel):
 
     class Config:
         from_attributes = True
+        
+class PaymentWebhook(BaseModel):
+    order_id: int
+    payment_id: str
+    status: str
